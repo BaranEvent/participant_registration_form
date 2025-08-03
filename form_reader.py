@@ -17,6 +17,10 @@ if 'form_data' not in st.session_state:
     st.session_state.form_data = {}
 if 'answers' not in st.session_state:
     st.session_state.answers = {}
+if 'current_event_id' not in st.session_state:
+    st.session_state.current_event_id = None
+if 'form_loaded' not in st.session_state:
+    st.session_state.form_loaded = False
 
 # Airtable configuration
 AIRTABLE_CONFIG = {
@@ -75,6 +79,8 @@ def load_forms():
     except Exception as e:
         st.error(f"Formlar yüklenirken hata oluştu: {str(e)}")
         return {}
+
+
 
 def render_form_question(question):
     """Render a form question based on its type"""
@@ -175,6 +181,7 @@ def render_form_question(question):
 def save_answers(event_id, answers):
     """Save form answers to Airtable"""
     try:
+        # Save form answers
         table = get_airtable_table("registration_form_answers")
         
         # Generate a unique user_id for this submission
@@ -200,77 +207,104 @@ def save_answers(event_id, answers):
 
 def main():
     st.title("📋 Form Doldurucu")
-    st.markdown("Mevcut formları görüntüleyin ve doldurun.")
+    st.markdown("Event ID'si girerek ilgili formu doldurun.")
     
-    # Load forms
-    forms = load_forms()
-    
-    if not forms:
-        st.warning("Henüz hiç form oluşturulmamış.")
-        return
-    
-    # Form selection
-    st.header("Form Seçimi")
-    
-    # Create a list of available forms
-    form_options = []
-    for event_id, questions in forms.items():
-        if questions:
-            # Get the first question's name as form title, or use event_id
-            form_title = questions[0].get('name', f"Form {event_id[:8]}")
-            form_options.append((event_id, form_title))
-    
-    if not form_options:
-        st.warning("Kullanılabilir form bulunamadı.")
-        return
-    
-    # Create selectbox for form selection
-    selected_form = st.selectbox(
-        "Doldurmak istediğiniz formu seçin:",
-        options=[title for _, title in form_options],
-        index=0
-    )
-    
-    # Get the selected event_id
-    selected_event_id = None
-    for event_id, title in form_options:
-        if title == selected_form:
-            selected_event_id = event_id
-            break
-    
-    if selected_event_id and selected_event_id in forms:
-        st.markdown("---")
-        st.header(f"Form: {selected_form}")
+    # Event ID input section
+    if not st.session_state.form_loaded:
+        st.header("Event ID Girişi")
         
-        # Display form questions
-        questions = forms[selected_event_id]
+        col1, col2 = st.columns([3, 1])
         
-        # Collect answers
-        answers = {}
+        with col1:
+            event_id = st.text_input(
+                "Event ID girin (örnek: 22):",
+                placeholder="22",
+                help="Doldurmak istediğiniz formun event ID'sini girin"
+            )
         
-        for question in questions:
-            with st.container():
-                st.markdown("---")
-                answer = render_form_question(question)
-                answers[question['id']] = answer
+        with col2:
+            apply_button = st.button("Uygula", type="primary", use_container_width=True)
         
-        # Submit button
-        st.markdown("---")
-        if st.button("📤 Formu Gönder", type="primary", use_container_width=True):
-            # Check if all required fields are filled
-            required_fields_missing = False
-            for question in questions:
-                if question['is_required'] and (answers.get(question['id']) is None or answers.get(question['id']) == ""):
-                    required_fields_missing = True
-                    break
+        if event_id and apply_button:
+            # Load forms
+            forms = load_forms()
             
-            if required_fields_missing:
-                st.error("Lütfen tüm zorunlu alanları doldurun!")
-            else:
-                if save_answers(selected_event_id, answers):
-                    # Clear form
-                    st.session_state.answers = {}
+            if not forms:
+                st.warning("Henüz hiç form oluşturulmamış.")
+                return
+            
+            # Check if event_id exists in forms
+            if event_id in forms:
+                questions = forms[event_id]
+                
+                if questions:
+                    # Store event ID and mark form as loaded
+                    st.session_state.current_event_id = event_id
+                    st.session_state.form_loaded = True
                     st.rerun()
+                else:
+                    st.warning(f"Event ID {event_id} için soru bulunamadı.")
+            else:
+                st.error(f"Event ID {event_id} için form bulunamadı. Lütfen geçerli bir Event ID girin.")
+    
+    # Form display section
+    else:
+        # Show current event ID and option to change
+        st.header(f"Event {st.session_state.current_event_id} Formu")
+        
+        # Add a button to go back to event ID input
+        if st.button("🔄 Farklı Event ID Gir", type="secondary"):
+            st.session_state.form_loaded = False
+            st.session_state.current_event_id = None
+            st.session_state.answers = {}
+            st.rerun()
+        
+        # Load and display form
+        forms = load_forms()
+        if forms and st.session_state.current_event_id in forms:
+            questions = forms[st.session_state.current_event_id]
+            
+            if questions:
+                st.markdown("---")
+                
+                # Display form questions
+                answers = {}
+                
+                for question in questions:
+                    with st.container():
+                        st.markdown("---")
+                        answer = render_form_question(question)
+                        answers[question['id']] = answer
+                
+                # Submit button
+                st.markdown("---")
+                if st.button("📤 Formu Gönder", type="primary", use_container_width=True):
+                    # Check if all required fields are filled
+                    required_fields_missing = False
+                    for question in questions:
+                        if question['is_required'] and (answers.get(question['id']) is None or answers.get(question['id']) == ""):
+                            required_fields_missing = True
+                            break
+                    
+                    if required_fields_missing:
+                        st.error("Lütfen tüm zorunlu alanları doldurun!")
+                    else:
+                        if save_answers(st.session_state.current_event_id, answers):
+                            # Clear form and show success
+                            st.session_state.answers = {}
+                            st.success("Form başarıyla gönderildi!")
+                            # Reset to event ID input
+                            st.session_state.form_loaded = False
+                            st.session_state.current_event_id = None
+                            st.rerun()
+            else:
+                st.warning(f"Event ID {st.session_state.current_event_id} için soru bulunamadı.")
+        else:
+            st.error(f"Event ID {st.session_state.current_event_id} için form bulunamadı.")
+            if st.button("🔄 Yeni Event ID Gir"):
+                st.session_state.form_loaded = False
+                st.session_state.current_event_id = None
+                st.rerun()
 
 if __name__ == "__main__":
     main() 
