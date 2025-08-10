@@ -233,19 +233,26 @@ def main():
                 st.warning("Henüz hiç form oluşturulmamış.")
                 return
             
+            # Convert event_id to integer for comparison
+            try:
+                event_id_int = int(event_id)
+            except ValueError:
+                st.error("Event ID sayısal bir değer olmalıdır.")
+                return
+            
             # Check if event_id exists in forms
-            if event_id in forms:
-                questions = forms[event_id]
+            if event_id_int in forms:
+                questions = forms[event_id_int]
                 
                 if questions:
                     # Store event ID and mark form as loaded
-                    st.session_state.current_event_id = event_id
+                    st.session_state.current_event_id = event_id_int
                     st.session_state.form_loaded = True
                     st.rerun()
                 else:
-                    st.warning(f"Event ID {event_id} için soru bulunamadı.")
+                    st.warning(f"Event ID {event_id_int} için soru bulunamadı.")
             else:
-                st.error(f"Event ID {event_id} için form bulunamadı. Lütfen geçerli bir Event ID girin.")
+                st.error(f"Event ID {event_id_int} için form bulunamadı. Lütfen geçerli bir Event ID girin.")
     
     # Form display section
     else:
